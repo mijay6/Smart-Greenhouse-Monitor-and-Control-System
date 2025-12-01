@@ -4,7 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import '../../../core/utils/logger.dart';
-import '../../../core/constants/app_Constants.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../models/sensor_data_model.dart';
 
 enum MqttConnectionStatus {
@@ -31,6 +31,9 @@ class MqttService {
   final StreamController<MqttConnectionStatus> _connectionStreamController =
       StreamController<MqttConnectionStatus>.broadcast();
 
+  final StreamController<Map<String, dynamic>> _ackStreamController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   // Reconnection Control
   int _reconnectAttempts = 0;
   Timer? _reconnectTimer;
@@ -45,6 +48,8 @@ class MqttService {
 
   Stream<MqttConnectionStatus> get connectionStream =>
       _connectionStreamController.stream;
+
+  Stream<Map<String, dynamic>> get ackStream => _ackStreamController.stream;
 
   MqttConnectionStatus get connectionState => _connectionState;
 
@@ -173,6 +178,7 @@ class MqttService {
     disconnect();
     _dataStreamController.close();
     _connectionStreamController.close();
+    _ackStreamController.close();
   }
 
   // Private metods
@@ -185,6 +191,7 @@ class MqttService {
 
   void _onConnectionRestored() {
     _client!.subscribe(AppConstants.telemetryTopic, MqttQos.atLeastOnce);
+    _client!.subscribe(AppConstants.statusTopic, MqttQos.atLeastOnce);
     _processPendingCommands();
     _startHealthMonitoring();
   }
@@ -243,18 +250,31 @@ class MqttService {
       final String topic = messages[0].topic;
 
       _lastMessageReceived = DateTime.now();
-      logger.d('Message received: $payload from topic: ${messages[0].topic}>');
+      logger.d('Message received: $payload from topic: $topic');
 
-      if (topic == AppConstants.telemetryTopic) {
-        final jsonData = json.decode(payload) as Map<String, dynamic>;
-        final sensorData = SensorDataModel.fromJson(jsonData);
-        _dataStreamController.add(sensorData);
-      } else if (topic == AppConstants.statusTopic) {
-        logger.i('Status update received: $payload');
-      } else {
-        logger.w(
-          'Unknown topic: $topic with payload: $payload',
-        ); // for future use
+      switch (topic) {
+        case AppConstants.telemetryTopic:
+          final jsonData = json.decode(payload) as Map<String, dynamic>;
+          final sensorData = SensorDataModel.fromJson(jsonData);
+          _dataStreamController.add(sensorData);
+          break;
+
+        case AppConstants.statusTopic:
+          try {
+            final jsonData = json.decode(payload) as Map<String, dynamic>;
+            if (jsonData.containsKey('actuator')) {
+              logger.i('Acknowledgment received: $payload');
+              _ackStreamController.add(jsonData);
+            } else {
+              logger.i('Status update received: $payload');
+            }
+          } catch (e) {
+            logger.i('Status update received: $payload');
+          }
+          break;
+
+        default:
+          logger.w('Unknown topic: $topic with payload: $payload');
       }
     } catch (e) {
       logger.e('Error processing received message: $e');

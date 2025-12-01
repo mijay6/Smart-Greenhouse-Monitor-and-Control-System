@@ -19,6 +19,7 @@ class SensorData {
     required this.timestamp,
   });
 
+  // copy with modified values (immutable)
   SensorData copyWith({
     double? temperature,
     double? humidity,

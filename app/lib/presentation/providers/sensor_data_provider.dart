@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/models/sensor_data_model.dart';
 import '../../domain/entities/sensor_data.dart';
 import 'mqtt_provider.dart';
 
